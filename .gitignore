@@ -1,1 +1,7 @@
 /config/config.ini
+/build/
+/dist/
+/venv/
+/run.log
+/autosender.spec
+.idea
