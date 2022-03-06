@@ -4,6 +4,8 @@ import logging
 import sys
 import json
 import os
+import subprocess
+import platform
 from enum import Enum, unique
 import time
 from PyQt6.QtSvg import QSvgRenderer
@@ -41,7 +43,7 @@ class Logout_State(Enum):
 
 def login(username, password):
     if username is None or username == '' or password is None or password == '':
-        logging.warning("[*] Wrong username or passward set.")
+        logging.error("[*] Wrong username or passward set.")
         return Login_State.username_password_NOT_SET, None
     publicKeyExponent = '10001'
     publicKeyModules = \
@@ -69,7 +71,7 @@ def login(username, password):
     try:
         url = requests.get(redirect_url, headers=redirect_head, timeout=1, proxies=proxies, verify=False)
     except Exception as e:
-        logging.warning(e)
+        logging.error(e)
         return Login_State.queryString_NOT_FOUND, None
     url = url.text.split("'")[1]
     queryString = url.split("?")[1]
@@ -121,7 +123,7 @@ def login(username, password):
     try:
         cookie_response = requests.get(url, headers=headers, proxies=proxies)
     except Exception as e:
-        logging.warning(e)
+        logging.error(e)
         return Login_State.cookie_NOT_GET, None
     cookie = requests.utils.dict_from_cookiejar(cookie_response.cookies)['JSESSIONID']
     headers['Cookie'] = headers['Cookie'].replace('C19A16116BF2C50DE7EDA5EFE981AEEE', cookie)
@@ -130,7 +132,7 @@ def login(username, password):
         response = requests.post('http://192.168.50.3:8080/eportal/InterFace.do?method=login', data=formdata,
                                  headers=headers, proxies=proxies, timeout=1)
     except Exception as e:
-        logging.warning(e)
+        logging.error(e)
         return Login_State.post_data_NOT_SEND, None
     data = response.content.decode('gb18030', 'ignore')
     data = json.loads(data)
@@ -189,7 +191,7 @@ def logout(username, password, user_index):
         response = requests.post('http://192.168.50.3:8080/eportal/InterFace.do?method=logout', data=formdata,
                                     headers=headers, proxies=proxies, timeout=1)
     except Exception as e:
-        logging.warning(e)
+        logging.error(e)
         return Logout_State.userIndex_Wrong
     data = response.content.decode('gb18030', 'ignore')
     data = json.loads(data)
@@ -207,26 +209,31 @@ class NetworkTest(QThread):
         super(NetworkTest, self).__init__()
 
     def run(self):
-        headers = {
-            'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
-                'Chrome/96.0.4664.110 Safari/537.36 Edg/96.0.1054.62',
-        }
+        not_support_flag = False
         while True:
             try:
-                status = requests.get("https://www.baidu.com",
-                                      headers=headers, timeout=1,
-                                      proxies=proxies).status_code
+                ip = '202.114.0.131'
+                if platform.system() == "Windows":
+                    ret = subprocess.call("ping -n 1 {}".format(ip), stdout=subprocess.DEVNULL, shell=True)
+                elif platform.system() == "Linux":
+                    ret = subprocess.call("ping -c 1 {}".format(ip), stdout=subprocess.DEVNULL, shell=True)
+                else:
+                    if not not_support_flag:
+                        self.tray.showMessage('校园网', '不支持的系统类型，网络连接模块不可用',
+                                              QSystemTrayIcon.MessageIcon.Information)
+                        logging.error("System does not support")
+                    not_support_flag = True
+                    continue
+                if ret == 0:
+                    self.network_flag.emit(True)
+                else:
+                    self.network_flag.emit(False)
+                time.sleep(0.5)
             except Exception as e:
-                logging.info(e)
+                logging.error(e)
                 self.network_flag.emit(False)
                 time.sleep(0.5)
                 continue
-            if status == 200:
-                self.network_flag.emit(True)
-            else:
-                self.network_flag.emit(False)
-            time.sleep(0.5)
 
 
 class MainWindow(QMainWindow):
@@ -241,7 +248,9 @@ class MainWindow(QMainWindow):
 
         self.first_network_detect = True
         self.keep_login_flag = False
+        self.silent_flag = False
         self.password_show_flag = False
+        self.silent_message_information = True
 
         self.setWindowTitle("AutoLogin")
         self.setFixedSize(300, 400)
@@ -387,6 +396,16 @@ class MainWindow(QMainWindow):
         self.remember_layout.addStretch(1)
         self.remember_widget.setLayout(self.remember_layout)
         self.vbox.addWidget(self.remember_widget)
+
+        self.silent_widget = QWidget()
+        self.silent_layout = QHBoxLayout()
+        self.silent_layout.addStretch(1)
+        self.silent_checkBox = QCheckBox()
+        self.silent_checkBox.setText("静默模式")
+        self.silent_layout.addWidget(self.silent_checkBox)
+        self.silent_layout.addStretch(1)
+        self.silent_widget.setLayout(self.silent_layout)
+        self.vbox.addWidget(self.silent_widget)
         self.vbox.addStretch(1)
 
         self.login_widget = QWidget()
@@ -405,7 +424,6 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.main_widget)
 
         self.status = self.statusBar()
-        self.tray.showMessage('网络连接', '初始化网络侦测中', QSystemTrayIcon.MessageIcon.Information)
         self.network_status_label = QLabel('网络连接：初始化网络侦测中 ')
         self.network_state = False
         self.status.addPermanentWidget(self.network_status_label)
@@ -428,13 +446,15 @@ class MainWindow(QMainWindow):
         if self.keep_login_flag:
             if not flag:
                 self.network_out_flag += 1
+                # 连续 5 次 ping 不通认为已经断网
                 if self.network_out_flag > 5:
                     self.network_out_flag = 0
                     self.login()
             else:
                 self.network_out_flag = 0
         if self.first_network_detect:
-            self.tray.showMessage('网络连接', f'{flag}', QSystemTrayIcon.MessageIcon.Information)
+            if self.silent_flag:
+                self.tray.showMessage('网络连接', f'{flag}', QSystemTrayIcon.MessageIcon.Information)
             self.first_network_detect = False
         self.network_status_label.setText(f'网络连接：{flag} ')
 
@@ -470,9 +490,13 @@ class MainWindow(QMainWindow):
         password_temp = self.settings.value("account/password")
         userindex_temp = self.settings.value("account/userIndex")
         remember_temp = self.settings.value("remember_state/remember")
+        silent_temp = self.settings.value("silent_state/silent")
         if remember_temp:
             self.remember = True
             self.remember_checkBox.setChecked(True)
+        if silent_temp:
+            self.silent_flag = True
+            self.silent_checkBox.setChecked(True)
         if username_temp is not None and password_temp is not None and userindex_temp is not None:
             self.username = username_temp
             self.password = password_temp
@@ -483,6 +507,7 @@ class MainWindow(QMainWindow):
         del username_temp
         del userindex_temp
         del password_temp
+        del silent_temp
 
     def login(self):
         username = self.username_combobox.lineEdit().text()
@@ -525,28 +550,38 @@ class MainWindow(QMainWindow):
                 self.settings.beginGroup("remember_state")
                 self.settings.setValue("remember", self.remember_checkBox.isChecked())
                 self.settings.endGroup()
+                self.settings.beginGroup("silent_state")
+                self.settings.setValue("silent", self.silent_checkBox.isChecked())
+                self.settings.endGroup()
                 self.settings.sync()
-            self.tray.showMessage('校园网', '登录成功，Enjoy!', QSystemTrayIcon.MessageIcon.Information)
-            QMessageBox.information(self, "校园网", "登录成功，Enjoy!", QMessageBox.StandardButton.Ok)
+            if not self.silent_flag:
+                self.tray.showMessage('校园网', '登录成功，Enjoy!', QSystemTrayIcon.MessageIcon.Information)
         else:
-            if self.keep_login_flag:
-                self.keep_login_checkBox.setChecked(False)
             if state == Login_State.username_password_NOT_SET:
-                QMessageBox.critical(self, "校园网", "请填写账户名或密码", QMessageBox.StandardButton.Ok)
+                if not self.silent_flag:
+                    self.tray.showMessage('校园网', '登录失败，请填写账户名或密码', QSystemTrayIcon.MessageIcon.Information)
             elif state == Login_State.queryString_NOT_FOUND:
                 if self.network_state:
-                    QMessageBox.information(self, "校园网", "已登录校园网，无需重复登录", QMessageBox.StandardButton.Ok)
+                    if not self.silent_flag:
+                        self.tray.showMessage('校园网', '登录失败，已登录校园网，无需重复登录',
+                                              QSystemTrayIcon.MessageIcon.Information)
                 else:
-                    QMessageBox.information(self, "校园网", "连接失败，请检查网线/wifi是否正常连接，并检查接入网络为校园网",
-                                            QMessageBox.StandardButton.Ok)
+                    if not self.silent_flag:
+                        self.tray.showMessage('校园网', '登录失败，请检查网线/wifi是否正常连接，并检查接入网络为校园网',
+                                              QSystemTrayIcon.MessageIcon.Information)
             elif state == Login_State.cookie_NOT_GET:
-                QMessageBox.critical(self, "校园网", "请确保接入网络为校园网", QMessageBox.StandardButton.Ok)
+                if not self.silent_flag:
+                    self.tray.showMessage('校园网', '登录失败，请确保接入网络为校园网',
+                                          QSystemTrayIcon.MessageIcon.Information)
             elif state == Login_State.post_data_NOT_SEND:
-                QMessageBox.critical(self, "校园网", "登录请求无法发送", QMessageBox.StandardButton.Ok)
+                if not self.silent_flag:
+                    self.tray.showMessage('校园网', '登录失败，登录请求无法发送', QSystemTrayIcon.MessageIcon.Information)
             elif state == Login_State.login_Wrong_Unknown:
-                QMessageBox.critical(self, "校园网", "账户名或密码错误", QMessageBox.StandardButton.Ok)
+                if not self.silent_flag:
+                    self.tray.showMessage('校园网', '登录失败，账户名或密码错误', QSystemTrayIcon.MessageIcon.Information)
             else:
-                QMessageBox.critical(self, "校园网", "未知错误", QMessageBox.StandardButton.Ok)
+                if not self.silent_flag:
+                    self.tray.showMessage('校园网', '登录失败，未知错误', QSystemTrayIcon.MessageIcon.Information)
 
     def logout(self):
         username = self.username_combobox.lineEdit().text()
@@ -560,17 +595,28 @@ class MainWindow(QMainWindow):
         state = logout(username, password, user_index)
         if state == Logout_State.logout_Successful:
             self.tray.showMessage('校园网', '下线成功，Enjoy!', QSystemTrayIcon.MessageIcon.Information)
-            QMessageBox.information(self, "校园网", "下线成功，Enjoy!", QMessageBox.StandardButton.Ok)
         elif state == Logout_State.userIndex_Wrong:
-            QMessageBox.critical(self, "校园网", "userIndex 错误", QMessageBox.StandardButton.Ok)
+            self.tray.showMessage('校园网', '下线失败，userIndex 错误', QSystemTrayIcon.MessageIcon.Information)
         else:
-            QMessageBox.critical(self, "校园网", "未知错误", QMessageBox.StandardButton.Ok)
+            self.tray.showMessage('校园网', '下线失败，未知错误', QSystemTrayIcon.MessageIcon.Information)
 
     def keep_login(self):
         if self.keep_login_checkBox.checkState() == Qt.CheckState.Checked:
             self.keep_login_flag = True
         else:
             self.keep_login_flag = False
+
+    def silent(self):
+        if self.silent_checkBox.checkState() == Qt.CheckState.Checked:
+            self.silent_flag = True
+            if self.silent_message_information:
+                QMessageBox.warning(self, "校园网",
+                                    "启用静默模式后，所有与登录相关的information/warning/error均无弹窗提示，请在日志中查看登录状态",
+                                    QMessageBox.StandardButton.Ok)
+                self.silent_message_information = False
+        else:
+            self.silent_flag = False
+            self.silent_message_information = True
 
 
 if __name__ == "__main__":
@@ -584,6 +630,7 @@ if __name__ == "__main__":
     mainwindow.login_button.clicked.connect(mainwindow.login)
     mainwindow.logout_button.clicked.connect(mainwindow.logout)
     mainwindow.keep_login_checkBox.toggled.connect(mainwindow.keep_login)
+    mainwindow.silent_checkBox.toggled.connect(mainwindow.silent)
     thread.start()
     mainwindow.show()
     sys.exit(app.exec())
