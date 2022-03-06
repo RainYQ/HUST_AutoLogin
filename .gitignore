@@ -1,7 +1,7 @@
 /config/config.ini
-/build/
-/dist/
+/build_linux/
+/build_windows/
 /venv/
 /run.log
-/autosender.spec
+__pycache__
 .idea
