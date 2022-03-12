@@ -2,6 +2,8 @@ import requests
 import requests.utils
 import logging
 import sys
+import win32api
+import win32con, winreg
 import json
 import os
 import subprocess
@@ -9,7 +11,7 @@ import platform
 from enum import Enum, unique
 import time
 from PyQt6.QtSvg import QSvgRenderer
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSettings, QCoreApplication, QVariant
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSettings, QCoreApplication, QVariant, QDir
 from PyQt6.QtGui import QPixmap, QColor, QIcon, QAction, QPainter
 from PyQt6.QtWidgets import QApplication, QLabel, QLineEdit, QHBoxLayout, QMainWindow, QWidget, QVBoxLayout, \
     QPushButton, QSystemTrayIcon, QMenu, QMessageBox, QCheckBox, QComboBox
@@ -19,10 +21,17 @@ os.environ['REQUESTS_CA_BUNDLE'] = os.path.join(os.path.dirname(sys.argv[0]), 'c
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 DATE_FORMAT = "%m/%d/%Y %H:%M:%S %p"
 
-logging.basicConfig(filename='run.log', level=logging.INFO, format=LOG_FORMAT, datefmt=DATE_FORMAT)
+abs_path = os.path.abspath(sys.argv[0])
+abs_path_dir, abs_path_filename = os.path.split(abs_path)
+abs_log_path = os.path.join(abs_path_dir, 'run.log')
+logging.basicConfig(filename=abs_log_path, level=logging.INFO, format=LOG_FORMAT, datefmt=DATE_FORMAT)
 
 proxies = {'http': None, 'https': None}
 
+autostart_key_name = 'hust_campus_network_autologin'
+
+QDir.addSearchPath('icons', os.path.join(abs_path_dir, "icons"))
+QDir.addSearchPath('configs', os.path.join(abs_path_dir, "config"))
 
 @unique
 class Login_State(Enum):
@@ -39,6 +48,68 @@ class Logout_State(Enum):
     logout_Successful = 1
     userIndex_Wrong = 2
     logout_Wrong_Unknown = 6
+
+
+def judge_key(key_name=None,
+              reg_root=win32con.HKEY_CURRENT_USER,
+              reg_path=r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
+              abspath=None
+              ):
+    reg_flags = win32con.WRITE_OWNER | win32con.KEY_WOW64_64KEY | win32con.KEY_ALL_ACCESS
+    try:
+        key = winreg.OpenKey(reg_root, reg_path, 0, reg_flags)
+        location, type = winreg.QueryValueEx(key, key_name)
+        logging.info(f"location: {location}, type: {type}")
+        feedback = 0
+        if location != abspath:
+            feedback = 1
+            logging.info('App Location Changed.')
+    except FileNotFoundError as e:
+        logging.error(e)
+        feedback = 1
+    except PermissionError as e:
+        logging.error(e)
+        feedback = 2
+    except:
+        feedback = 3
+    return feedback
+
+
+def autorun(switch="open",
+            key_name=None,
+            abspath=os.path.abspath(sys.argv[0])):
+    key_exit = judge_key(reg_root=win32con.HKEY_CURRENT_USER,
+                         reg_path=r"Software\Microsoft\Windows\CurrentVersion\Run",
+                         key_name=key_name,
+                         abspath=abspath)
+    reg_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+    key = win32api.RegOpenKey(win32con.HKEY_CURRENT_USER, reg_path, 0, win32con.KEY_ALL_ACCESS)
+    if switch == "open":
+        try:
+            if key_exit == 0:
+                logging.info('[*] Auto Start has been set successfully. No need setting again.')
+            elif key_exit == 1:
+                win32api.RegSetValueEx(key, key_name, 0, win32con.REG_SZ, abspath)
+                win32api.RegCloseKey(key)
+                logging.info('[*] Auto Start key update successful.')
+            elif key_exit == 2:
+                logging.error('[*] No Suitable Permission.')
+        except:
+            logging.error('[*] Error. Cannot Auto Start.')
+    elif switch == "close":
+        try:
+            if key_exit == 0:
+                win32api.RegDeleteValue(key, key_name)
+                win32api.RegCloseKey(key)
+                logging.info('[*] Auto Start key delete successful.')
+            elif key_exit == 1:
+                logging.info('[*] Auto Start key does not exist.')
+            elif key_exit == 2:
+                logging.error('[*] No Suitable Permission.')
+            else:
+                logging.error('[*] Error. Cannot delete Auto Start key.')
+        except:
+            logging.error('[*] Error. Cannot delete Auto Start key.')
 
 
 def login(username, password):
@@ -93,7 +164,9 @@ def login(username, password):
             'EPORTAL_COOKIE_SERVER=; '
             'EPORTAL_COOKIE_DOMAIN=; '
             'EPORTAL_COOKIE_SAVEPASSWORD=true; '
+            # urlEncode: 请选择服务
             'EPORTAL_COOKIE_SERVER_NAME=%E8%AF%B7%E9%80%89%E6%8B%A9%E6%9C%8D%E5%8A%A1; '
+            # urlEncode: 华中科技大学
             'EPORTAL_USER_GROUP=%E5%8D%8E%E4%B8%AD%E7%A7%91%E6%8A%80%E5%A4%A7%E5%AD%A6; '
             'EPORTAL_COOKIE_USERNAME=' + username + '; ' +
             'EPORTAL_COOKIE_PASSWORD=' + password + '; ' +
@@ -134,7 +207,7 @@ def login(username, password):
     except Exception as e:
         logging.error(e)
         return Login_State.post_data_NOT_SEND, None
-    data = response.content.decode('gb18030', 'ignore')
+    data = response.content.decode('utf-8', 'ignore')
     data = json.loads(data)
     if data["result"] == "success":
         logging.info("[*] Login Successful")
@@ -166,7 +239,9 @@ def logout(username, password, user_index):
             'EPORTAL_COOKIE_NEWV=true; '
             'EPORTAL_COOKIE_PASSWORD=' + password + '; ' +
             'EPORTAL_AUTO_LAND=; '
+            # urlEncode: 请选择服务
             'EPORTAL_COOKIE_SERVER_NAME=%E8%AF%B7%E9%80%89%E6%8B%A9%E6%9C%8D%E5%8A%A1; '
+            # urlEncode: 华中科技大学
             'EPORTAL_USER_GROUP=%E5%8D%8E%E4%B8%AD%E7%A7%91%E6%8A%80%E5%A4%A7%E5%AD%A6; '
             'JSESSIONID=3AC4520F2F846C4C06ABE15B961F620C; '
             'JSESSIONID=4E728295B7F567ECECB0D586F1F5CBC2'
@@ -189,11 +264,11 @@ def logout(username, password, user_index):
 
     try:
         response = requests.post('http://192.168.50.3:8080/eportal/InterFace.do?method=logout', data=formdata,
-                                    headers=headers, proxies=proxies, timeout=1)
+                                 headers=headers, proxies=proxies, timeout=1)
     except Exception as e:
         logging.error(e)
         return Logout_State.userIndex_Wrong
-    data = response.content.decode('gb18030', 'ignore')
+    data = response.content.decode('utf-8', 'ignore')
     data = json.loads(data)
     if data["result"] == "success":
         logging.info("[*] Logout Successful")
@@ -255,7 +330,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("AutoLogin")
         self.setFixedSize(300, 400)
 
-        self.app_svg = QSvgRenderer(r"icons/app.svg")
+        self.app_svg = QSvgRenderer("icons:app.svg")
         self.app_pixmap = QPixmap(128, 128)
         self.app_pixmap.fill(QColor(0, 0, 0, 0))
         self.app_painter = QPainter(self.app_pixmap)
@@ -267,7 +342,7 @@ class MainWindow(QMainWindow):
         self.setWindowFlags(Qt.WindowType.WindowMinimizeButtonHint & Qt.WindowType.WindowCloseButtonHint)
 
         self.tray = QSystemTrayIcon()
-        self.tray_svg = QSvgRenderer(r"icons/网络.svg")
+        self.tray_svg = QSvgRenderer("icons:网络.svg")
         self.tray_pixmap = QPixmap(128, 128)
         self.tray_pixmap.fill(QColor(0, 0, 0, 0))
         self.tray_painter = QPainter(self.tray_pixmap)
@@ -275,13 +350,13 @@ class MainWindow(QMainWindow):
         self.tray_icon = QIcon(self.tray_pixmap)
         self.tray.setIcon(self.tray_icon)
 
-        self.show_svg = QSvgRenderer(r"icons/显示.svg")
+        self.show_svg = QSvgRenderer("icons:显示.svg")
         self.show_pixmap = QPixmap(128, 128)
         self.show_pixmap.fill(QColor(0, 0, 0, 0))
         self.show_painter = QPainter(self.show_pixmap)
         self.show_svg.render(self.show_painter)
         self.show_action = QAction(QIcon(self.show_pixmap), "&Show", self, triggered=self.re_show)
-        self.exit_svg = QSvgRenderer(r"icons/退出.svg")
+        self.exit_svg = QSvgRenderer("icons:退出.svg")
         self.exit_pixmap = QPixmap(128, 128)
         self.exit_pixmap.fill(QColor(0, 0, 0, 0))
         self.exit_painter = QPainter(self.exit_pixmap)
@@ -320,12 +395,12 @@ class MainWindow(QMainWindow):
         self.password_text = QLineEdit()
         self.password_text.setEchoMode(QLineEdit.EchoMode.Password)
         self.password_text.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
-        self.password_show_svg = QSvgRenderer(r"icons/解锁.svg")
+        self.password_show_svg = QSvgRenderer("icons:解锁.svg")
         self.password_show_pixmap = QPixmap(32, 32)
         self.password_show_pixmap.fill(QColor(0, 0, 0, 0))
         self.password_show_painter = QPainter(self.password_show_pixmap)
         self.password_show_svg.render(self.password_show_painter)
-        self.password_hide_svg = QSvgRenderer(r"icons/锁定.svg")
+        self.password_hide_svg = QSvgRenderer("icons:锁定.svg")
         self.password_hide_pixmap = QPixmap(32, 32)
         self.password_hide_pixmap.fill(QColor(0, 0, 0, 0))
         self.password_hide_painter = QPainter(self.password_hide_pixmap)
@@ -406,7 +481,33 @@ class MainWindow(QMainWindow):
         self.silent_layout.addStretch(1)
         self.silent_widget.setLayout(self.silent_layout)
         self.vbox.addWidget(self.silent_widget)
+
+        self.autostart_widget = QWidget()
+        self.autostart_layout = QHBoxLayout()
+        self.autostart_layout.addStretch(1)
+        self.autostart_checkBox = QCheckBox()
+        self.autostart_checkBox.setText("开机自启")
+        self.autostart_layout.addWidget(self.autostart_checkBox)
+        self.autostart_layout.addStretch(1)
+        self.autostart_widget.setLayout(self.autostart_layout)
+        self.vbox.addWidget(self.autostart_widget)
         self.vbox.addStretch(1)
+        
+        reg_root = win32con.HKEY_CURRENT_USER
+        reg_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+        reg_flags = win32con.WRITE_OWNER | win32con.KEY_WOW64_64KEY | win32con.KEY_ALL_ACCESS
+        try:
+            key = winreg.OpenKey(reg_root, reg_path, 0, reg_flags)
+            location, type = winreg.QueryValueEx(key, autostart_key_name)
+            logging.info('Found Auto Start Key.')
+            logging.info(f"location: {location}, type: {type}")
+            logging.info('Auto Start Checked.')
+            if location != os.path.abspath(sys.argv[0]):
+                logging.info('App Location Changed.')
+            self.autostart_checkBox.setChecked(True)
+            autorun(switch='open', key_name=autostart_key_name)
+        except:
+            pass
 
         self.login_widget = QWidget()
         self.hbox = QHBoxLayout()
@@ -428,7 +529,7 @@ class MainWindow(QMainWindow):
         self.network_state = False
         self.status.addPermanentWidget(self.network_status_label)
 
-        self.settings = QSettings(r"config/config.ini", QSettings.Format.IniFormat)
+        self.settings = QSettings("configs:config.ini", QSettings.Format.IniFormat)
         self.init_config()
         self.username_combobox.currentTextChanged.connect(self.username_combobox_changed)
 
@@ -453,8 +554,7 @@ class MainWindow(QMainWindow):
             else:
                 self.network_out_flag = 0
         if self.first_network_detect:
-            if self.silent_flag:
-                self.tray.showMessage('网络连接', f'{flag}', QSystemTrayIcon.MessageIcon.Information)
+            self.tray.showMessage('网络连接', f'{flag}', QSystemTrayIcon.MessageIcon.Information)
             self.first_network_detect = False
         self.network_status_label.setText(f'网络连接：{flag} ')
 
@@ -489,25 +589,34 @@ class MainWindow(QMainWindow):
         username_temp = self.settings.value("account/username")
         password_temp = self.settings.value("account/password")
         userindex_temp = self.settings.value("account/userIndex")
+        keeplogin_temp = self.settings.value("keeplogin_state/keeplogin")
         remember_temp = self.settings.value("remember_state/remember")
         silent_temp = self.settings.value("silent_state/silent")
+        autostart_temp = self.settings.value("autostart_state/autostart")
+        if keeplogin_temp:
+            self.keep_login_flag = True
+            self.remember_checkBox.setChecked(True)
         if remember_temp:
             self.remember = True
             self.remember_checkBox.setChecked(True)
         if silent_temp:
             self.silent_flag = True
             self.silent_checkBox.setChecked(True)
+        if autostart_temp:
+            self.autostart_checkBox.setChecked(True)
         if username_temp is not None and password_temp is not None and userindex_temp is not None:
             self.username = username_temp
             self.password = password_temp
             self.userindex = userindex_temp
             self.username_combobox.addItems(self.username)
             self.password_text.setText(self.password[0])
-        del remember_temp
         del username_temp
         del userindex_temp
         del password_temp
+        del keeplogin_temp
+        del remember_temp
         del silent_temp
+        del autostart_temp
 
     def login(self):
         username = self.username_combobox.lineEdit().text()
@@ -522,15 +631,14 @@ class MainWindow(QMainWindow):
                 else:
                     index = self.username.index(username)
                     if self.userindex[index] != user_index:
-                        QMessageBox.information(self, "校园网", "userIndex 已更新", QMessageBox.StandardButton.Ok)
+                        self.tray.showMessage("校园网", "userIndex 已更新", QSystemTrayIcon.MessageIcon.Information)
                         self.userindex[index] = user_index
                     if self.password[index] != password:
                         message = QMessageBox()
                         message.setText('校园网')
                         message.setInformativeText(f'输入的密码与存储的账户{username}密码不同，是否需要更新!')
                         message.setStandardButtons(QMessageBox.StandardButton.Save |
-                                                   QMessageBox.StandardButton.Discard |
-                                                   QMessageBox.StandardButton.Cancel)
+                                                   QMessageBox.StandardButton.Discard)
                         message.setDefaultButton(QMessageBox.StandardButton.Save)
                         if message.exec() == QMessageBox.StandardButton.Save:
                             self.password[index] = password
@@ -547,41 +655,41 @@ class MainWindow(QMainWindow):
                 self.settings.setValue("password", self.password)
                 self.settings.setValue("userIndex", self.userindex)
                 self.settings.endGroup()
+                self.settings.beginGroup("keeplogin_state")
+                self.settings.setValue("keeplogin", self.keep_login_checkBox.isChecked())
+                self.settings.endGroup()
                 self.settings.beginGroup("remember_state")
                 self.settings.setValue("remember", self.remember_checkBox.isChecked())
                 self.settings.endGroup()
                 self.settings.beginGroup("silent_state")
                 self.settings.setValue("silent", self.silent_checkBox.isChecked())
                 self.settings.endGroup()
+                self.settings.beginGroup("autostart_state")
+                self.settings.setValue("autostart", self.autostart_checkBox.isChecked())
+                self.settings.endGroup()
                 self.settings.sync()
             if not self.silent_flag:
                 self.tray.showMessage('校园网', '登录成功，Enjoy!', QSystemTrayIcon.MessageIcon.Information)
         else:
-            if state == Login_State.username_password_NOT_SET:
-                if not self.silent_flag:
-                    self.tray.showMessage('校园网', '登录失败，请填写账户名或密码', QSystemTrayIcon.MessageIcon.Information)
-            elif state == Login_State.queryString_NOT_FOUND:
-                if self.network_state:
-                    if not self.silent_flag:
+            if not self.silent_flag:
+                if state == Login_State.username_password_NOT_SET:
+                    self.tray.showMessage('校园网', '登录失败，请填写账户名或密码', QSystemTrayIcon.MessageIcon.Warning)
+                elif state == Login_State.queryString_NOT_FOUND:
+                    if self.network_state:
                         self.tray.showMessage('校园网', '登录失败，已登录校园网，无需重复登录',
-                                              QSystemTrayIcon.MessageIcon.Information)
-                else:
-                    if not self.silent_flag:
+                                              QSystemTrayIcon.MessageIcon.Warning)
+                    else:
                         self.tray.showMessage('校园网', '登录失败，请检查网线/wifi是否正常连接，并检查接入网络为校园网',
-                                              QSystemTrayIcon.MessageIcon.Information)
-            elif state == Login_State.cookie_NOT_GET:
-                if not self.silent_flag:
+                                              QSystemTrayIcon.MessageIcon.Warning)
+                elif state == Login_State.cookie_NOT_GET:
                     self.tray.showMessage('校园网', '登录失败，请确保接入网络为校园网',
-                                          QSystemTrayIcon.MessageIcon.Information)
-            elif state == Login_State.post_data_NOT_SEND:
-                if not self.silent_flag:
-                    self.tray.showMessage('校园网', '登录失败，登录请求无法发送', QSystemTrayIcon.MessageIcon.Information)
-            elif state == Login_State.login_Wrong_Unknown:
-                if not self.silent_flag:
-                    self.tray.showMessage('校园网', '登录失败，账户名或密码错误', QSystemTrayIcon.MessageIcon.Information)
-            else:
-                if not self.silent_flag:
-                    self.tray.showMessage('校园网', '登录失败，未知错误', QSystemTrayIcon.MessageIcon.Information)
+                                          QSystemTrayIcon.MessageIcon.Warning)
+                elif state == Login_State.post_data_NOT_SEND:
+                    self.tray.showMessage('校园网', '登录失败，登录请求无法发送', QSystemTrayIcon.MessageIcon.Critical)
+                elif state == Login_State.login_Wrong_Unknown:
+                    self.tray.showMessage('校园网', '登录失败，账户名或密码错误', QSystemTrayIcon.MessageIcon.Critical)
+                else:
+                    self.tray.showMessage('校园网', '登录失败，未知错误', QSystemTrayIcon.MessageIcon.Critical)
 
     def logout(self):
         username = self.username_combobox.lineEdit().text()
@@ -618,6 +726,12 @@ class MainWindow(QMainWindow):
             self.silent_flag = False
             self.silent_message_information = True
 
+    def autostart(self):
+        if self.autostart_checkBox.checkState() == Qt.CheckState.Checked:
+            autorun(switch='open', key_name=autostart_key_name)
+        else:
+            autorun(switch='close', key_name=autostart_key_name)
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
@@ -631,6 +745,7 @@ if __name__ == "__main__":
     mainwindow.logout_button.clicked.connect(mainwindow.logout)
     mainwindow.keep_login_checkBox.toggled.connect(mainwindow.keep_login)
     mainwindow.silent_checkBox.toggled.connect(mainwindow.silent)
+    mainwindow.autostart_checkBox.toggled.connect(mainwindow.autostart)
     thread.start()
     mainwindow.show()
     sys.exit(app.exec())
