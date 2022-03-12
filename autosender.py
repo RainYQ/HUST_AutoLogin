@@ -2,8 +2,12 @@ import requests
 import requests.utils
 import logging
 import sys
-import win32api
-import win32con, winreg
+
+try:
+    import win32api
+    import win32con, winreg
+except:
+    pass
 import json
 import os
 import subprocess
@@ -33,6 +37,7 @@ autostart_key_name = 'hust_campus_network_autologin'
 QDir.addSearchPath('icons', os.path.join(abs_path_dir, "icons"))
 QDir.addSearchPath('configs', os.path.join(abs_path_dir, "config"))
 
+
 @unique
 class Login_State(Enum):
     login_Successful = 1
@@ -50,66 +55,94 @@ class Logout_State(Enum):
     logout_Wrong_Unknown = 6
 
 
-def judge_key(key_name=None,
-              reg_root=win32con.HKEY_CURRENT_USER,
-              reg_path=r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
-              abspath=None
-              ):
-    reg_flags = win32con.WRITE_OWNER | win32con.KEY_WOW64_64KEY | win32con.KEY_ALL_ACCESS
-    try:
-        key = winreg.OpenKey(reg_root, reg_path, 0, reg_flags)
-        location, type = winreg.QueryValueEx(key, key_name)
-        logging.info(f"location: {location}, type: {type}")
-        feedback = 0
-        if location != abspath:
-            feedback = 1
-            logging.info('App Location Changed.')
-    except FileNotFoundError as e:
-        logging.error(e)
-        feedback = 1
-    except PermissionError as e:
-        logging.error(e)
-        feedback = 2
-    except:
-        feedback = 3
-    return feedback
-
-
-def autorun(switch="open",
-            key_name=None,
-            abspath=os.path.abspath(sys.argv[0])):
-    key_exit = judge_key(reg_root=win32con.HKEY_CURRENT_USER,
-                         reg_path=r"Software\Microsoft\Windows\CurrentVersion\Run",
-                         key_name=key_name,
-                         abspath=abspath)
-    reg_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
-    key = win32api.RegOpenKey(win32con.HKEY_CURRENT_USER, reg_path, 0, win32con.KEY_ALL_ACCESS)
-    if switch == "open":
+if platform.system() == "Windows":
+    def judge_key(key_name=None,
+                  reg_root=win32con.HKEY_CURRENT_USER,
+                  reg_path=r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
+                  abspath=None
+                  ):
+        reg_flags = win32con.WRITE_OWNER | win32con.KEY_WOW64_64KEY | win32con.KEY_ALL_ACCESS
         try:
-            if key_exit == 0:
-                logging.info('[*] Auto Start has been set successfully. No need setting again.')
-            elif key_exit == 1:
-                win32api.RegSetValueEx(key, key_name, 0, win32con.REG_SZ, abspath)
-                win32api.RegCloseKey(key)
-                logging.info('[*] Auto Start key update successful.')
-            elif key_exit == 2:
-                logging.error('[*] No Suitable Permission.')
+            key = winreg.OpenKey(reg_root, reg_path, 0, reg_flags)
+            location, type = winreg.QueryValueEx(key, key_name)
+            logging.info(f"location: {location}, type: {type}")
+            feedback = 0
+            if location != abspath:
+                feedback = 1
+                logging.info('App Location Changed.')
+        except FileNotFoundError as e:
+            logging.error(e)
+            feedback = 2
+        except PermissionError as e:
+            logging.error(e)
+            feedback = 3
         except:
-            logging.error('[*] Error. Cannot Auto Start.')
-    elif switch == "close":
-        try:
-            if key_exit == 0:
-                win32api.RegDeleteValue(key, key_name)
-                win32api.RegCloseKey(key)
-                logging.info('[*] Auto Start key delete successful.')
-            elif key_exit == 1:
-                logging.info('[*] Auto Start key does not exist.')
-            elif key_exit == 2:
-                logging.error('[*] No Suitable Permission.')
-            else:
+            feedback = 4
+        return feedback
+
+
+    def autorun_windows(switch="open",
+                        key_name=None,
+                        abspath=os.path.abspath(sys.argv[0])):
+        key_exit = judge_key(reg_root=win32con.HKEY_CURRENT_USER,
+                             reg_path=r"Software\Microsoft\Windows\CurrentVersion\Run",
+                             key_name=key_name,
+                             abspath=abspath)
+        reg_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+        key = win32api.RegOpenKey(win32con.HKEY_CURRENT_USER, reg_path, 0, win32con.KEY_ALL_ACCESS)
+        if switch == "open":
+            try:
+                if key_exit == 0:
+                    logging.info('[*] Auto Start has been set successfully. No need setting again.')
+                elif key_exit == 1:
+                    win32api.RegSetValueEx(key, key_name, 0, win32con.REG_SZ, abspath)
+                    win32api.RegCloseKey(key)
+                    logging.info('[*] Auto Start key create successful.')
+                elif key_exit == 2:
+                    win32api.RegSetValueEx(key, key_name, 0, win32con.REG_SZ, abspath)
+                    win32api.RegCloseKey(key)
+                    logging.info('[*] Auto Start key update successful.')
+                elif key_exit == 3:
+                    logging.error('[*] No Suitable Permission.')
+            except:
+                logging.error('[*] Error. Cannot Auto Start.')
+        elif switch == "close":
+            try:
+                if key_exit == 0:
+                    win32api.RegDeleteValue(key, key_name)
+                    win32api.RegCloseKey(key)
+                    logging.info('[*] Auto Start key delete successful.')
+                elif key_exit == 1:
+                    logging.info('[*] Auto Start key wrong.')
+                elif key_exit == 2:
+                    logging.info('[*] Auto Start key does not exist.')
+                elif key_exit == 3:
+                    logging.error('[*] No Suitable Permission.')
+                else:
+                    logging.error('[*] Error. Cannot delete Auto Start key.')
+            except:
                 logging.error('[*] Error. Cannot delete Auto Start key.')
-        except:
-            logging.error('[*] Error. Cannot delete Auto Start key.')
+elif platform.system() == "Linux":
+    def autorun_linux(switch="open"):
+        if switch == "open":
+            desktop_content = "[Desktop Entry]\n"
+            desktop_content += f"Icon={abs_path_dir}/icons/arjv1-a2cbo-004.ico\n"
+            desktop_content += f"Exec={abs_path_dir}/autosender\n"
+            desktop_content += "Version=beta-0.3.0\n"
+            desktop_content += "Type=Application\n"
+            desktop_content += "Categories=Development\n"
+            desktop_content += "Name=HUST AutoLogin\n"
+            desktop_content += "StartupWMClass=HUST AutoLogin\n"
+            desktop_content += "Terminal=false\n"
+            desktop_content += "MimeType=x-scheme-handler/rainyq;\n"
+            desktop_content += "X-GNOME-Autostart-enabled=true\n"
+            desktop_content += "StartupNotify=false\n"
+            desktop_content += "X-GNOME-Autostart-Delay=10\n"
+            desktop_content += "X-MATE-Autostart-Delay=10\n"
+            desktop_content += "X-KDE-autostart-after=panel\n"
+            os.system(f"echo '{desktop_content}' > ~/.config/autostart/{autostart_key_name}.desktop")
+        elif switch == "close":
+            os.system(f"rm -rf ~/.config/autostart/{autostart_key_name}.desktop")
 
 
 def login(username, password):
@@ -492,22 +525,6 @@ class MainWindow(QMainWindow):
         self.autostart_widget.setLayout(self.autostart_layout)
         self.vbox.addWidget(self.autostart_widget)
         self.vbox.addStretch(1)
-        
-        reg_root = win32con.HKEY_CURRENT_USER
-        reg_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
-        reg_flags = win32con.WRITE_OWNER | win32con.KEY_WOW64_64KEY | win32con.KEY_ALL_ACCESS
-        try:
-            key = winreg.OpenKey(reg_root, reg_path, 0, reg_flags)
-            location, type = winreg.QueryValueEx(key, autostart_key_name)
-            logging.info('Found Auto Start Key.')
-            logging.info(f"location: {location}, type: {type}")
-            logging.info('Auto Start Checked.')
-            if location != os.path.abspath(sys.argv[0]):
-                logging.info('App Location Changed.')
-            self.autostart_checkBox.setChecked(True)
-            autorun(switch='open', key_name=autostart_key_name)
-        except:
-            pass
 
         self.login_widget = QWidget()
         self.hbox = QHBoxLayout()
@@ -727,10 +744,19 @@ class MainWindow(QMainWindow):
             self.silent_message_information = True
 
     def autostart(self):
-        if self.autostart_checkBox.checkState() == Qt.CheckState.Checked:
-            autorun(switch='open', key_name=autostart_key_name)
+        if platform.system() == "Windows":
+            if self.autostart_checkBox.checkState() == Qt.CheckState.Checked:
+                autorun_windows(switch='open', key_name=autostart_key_name)
+            else:
+                autorun_windows(switch='close', key_name=autostart_key_name)
+        elif platform.system() == "Linux":
+            if self.autostart_checkBox.checkState() == Qt.CheckState.Checked:
+                autorun_linux(switch='open')
+            else:
+                autorun_linux(switch='close')
         else:
-            autorun(switch='close', key_name=autostart_key_name)
+            self.tray.showMessage('校园网', '非 Windows / Linux 系统，开机自启模块无法启动',
+                                  QSystemTrayIcon.MessageIcon.Critical)
 
 
 if __name__ == "__main__":
@@ -747,5 +773,20 @@ if __name__ == "__main__":
     mainwindow.silent_checkBox.toggled.connect(mainwindow.silent)
     mainwindow.autostart_checkBox.toggled.connect(mainwindow.autostart)
     thread.start()
+    try:
+        if platform.system() == "Windows":
+            key_exit = judge_key(reg_root=win32con.HKEY_CURRENT_USER,
+                                 reg_path=r"Software\Microsoft\Windows\CurrentVersion\Run",
+                                 key_name=autostart_key_name,
+                                 abspath=os.path.abspath(sys.argv[0]))
+            if key_exit == 0 or key_exit == 1:
+                mainwindow.autostart_checkBox.setChecked(True)
+        elif platform.system() == "Linux":
+            if os.path.exists(f"~/.config/autostart/{autostart_key_name}.desktop"):
+                mainwindow.autostart_checkBox.setChecked(True)
+        else:
+            pass
+    except:
+        pass
     mainwindow.show()
     sys.exit(app.exec())
