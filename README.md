@@ -1,4 +1,4 @@
-#HUST Campus Network AutoLogin
+# HUST Campus Network AutoLogin
 ## Structure
 ```angular2html
 ├── root
@@ -29,6 +29,6 @@
 - `静默模式` 勾选后与登录相关的通知被屏蔽，只能从日志中查看，配合`保持连接` 使用
 - `开机自启` 勾选后开机自启动，仅在 `windows 10` or `windows 11` or `Ubuntu 20.04` or ` Ubuntu 21.04` 测试过，配合 `保持连接` 使用
 ## Package
-```python 
+```commandline 
 pyinstaller -F -w -i ../icons/arjv1-a2cbo-004.ico ../autosender.py
 ```
