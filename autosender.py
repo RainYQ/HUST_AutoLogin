@@ -1,21 +1,9 @@
-import requests
-import requests.utils
-import logging
-import sys
-
-try:
-    import win32api
-    import win32con, winreg
-except:
-    pass
-import json
+from network_operations import *
+from auto_start import *
 import os
-import subprocess
 import platform
-from enum import Enum, unique
-import time
 from PyQt6.QtSvg import QSvgRenderer
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSettings, QCoreApplication, QVariant, QDir
+from PyQt6.QtCore import Qt, QSettings, QCoreApplication, QVariant, QDir
 from PyQt6.QtGui import QPixmap, QColor, QIcon, QAction, QPainter
 from PyQt6.QtWidgets import QApplication, QLabel, QLineEdit, QHBoxLayout, QMainWindow, QWidget, QVBoxLayout, \
     QPushButton, QSystemTrayIcon, QMenu, QMessageBox, QCheckBox, QComboBox
@@ -25,323 +13,11 @@ os.environ['REQUESTS_CA_BUNDLE'] = os.path.join(os.path.dirname(sys.argv[0]), 'c
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 DATE_FORMAT = "%m/%d/%Y %H:%M:%S %p"
 
-abs_path = os.path.abspath(sys.argv[0])
-abs_path_dir, abs_path_filename = os.path.split(abs_path)
 abs_log_path = os.path.join(abs_path_dir, 'run.log')
 logging.basicConfig(filename=abs_log_path, level=logging.INFO, format=LOG_FORMAT, datefmt=DATE_FORMAT)
 
-proxies = {'http': None, 'https': None}
-
-autostart_key_name = 'hust_campus_network_autologin'
-
 QDir.addSearchPath('icons', os.path.join(abs_path_dir, "icons"))
 QDir.addSearchPath('configs', os.path.join(abs_path_dir, "config"))
-
-
-@unique
-class Login_State(Enum):
-    login_Successful = 1
-    username_password_NOT_SET = 2
-    queryString_NOT_FOUND = 3
-    cookie_NOT_GET = 4
-    post_data_NOT_SEND = 5
-    login_Wrong_Unknown = 6
-
-
-@unique
-class Logout_State(Enum):
-    logout_Successful = 1
-    userIndex_Wrong = 2
-    logout_Wrong_Unknown = 6
-
-
-if platform.system() == "Windows":
-    def judge_key(key_name=None,
-                  reg_root=win32con.HKEY_CURRENT_USER,
-                  reg_path=r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
-                  abspath=None
-                  ):
-        reg_flags = win32con.WRITE_OWNER | win32con.KEY_WOW64_64KEY | win32con.KEY_ALL_ACCESS
-        try:
-            key = winreg.OpenKey(reg_root, reg_path, 0, reg_flags)
-            location, type = winreg.QueryValueEx(key, key_name)
-            logging.info(f"location: {location}, type: {type}")
-            feedback = 0
-            if location != abspath:
-                feedback = 1
-                logging.info('App Location Changed.')
-        except FileNotFoundError as e:
-            logging.error(e)
-            feedback = 2
-        except PermissionError as e:
-            logging.error(e)
-            feedback = 3
-        except:
-            feedback = 4
-        return feedback
-
-
-    def autorun_windows(switch="open",
-                        key_name=None,
-                        abspath=os.path.abspath(sys.argv[0])):
-        key_exit = judge_key(reg_root=win32con.HKEY_CURRENT_USER,
-                             reg_path=r"Software\Microsoft\Windows\CurrentVersion\Run",
-                             key_name=key_name,
-                             abspath=abspath)
-        reg_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
-        key = win32api.RegOpenKey(win32con.HKEY_CURRENT_USER, reg_path, 0, win32con.KEY_ALL_ACCESS)
-        if switch == "open":
-            try:
-                if key_exit == 0:
-                    logging.info('[*] Auto Start has been set successfully. No need setting again.')
-                elif key_exit == 1:
-                    win32api.RegSetValueEx(key, key_name, 0, win32con.REG_SZ, abspath)
-                    win32api.RegCloseKey(key)
-                    logging.info('[*] Auto Start key create successful.')
-                elif key_exit == 2:
-                    win32api.RegSetValueEx(key, key_name, 0, win32con.REG_SZ, abspath)
-                    win32api.RegCloseKey(key)
-                    logging.info('[*] Auto Start key update successful.')
-                elif key_exit == 3:
-                    logging.error('[*] No Suitable Permission.')
-            except:
-                logging.error('[*] Error. Cannot Auto Start.')
-        elif switch == "close":
-            try:
-                if key_exit == 0:
-                    win32api.RegDeleteValue(key, key_name)
-                    win32api.RegCloseKey(key)
-                    logging.info('[*] Auto Start key delete successful.')
-                elif key_exit == 1:
-                    logging.info('[*] Auto Start key wrong.')
-                elif key_exit == 2:
-                    logging.info('[*] Auto Start key does not exist.')
-                elif key_exit == 3:
-                    logging.error('[*] No Suitable Permission.')
-                else:
-                    logging.error('[*] Error. Cannot delete Auto Start key.')
-            except:
-                logging.error('[*] Error. Cannot delete Auto Start key.')
-elif platform.system() == "Linux":
-    def autorun_linux(switch="open"):
-        if switch == "open":
-            desktop_content = "[Desktop Entry]\n"
-            desktop_content += f"Icon={abs_path_dir}/icons/arjv1-a2cbo-004.ico\n"
-            desktop_content += f"Exec={abs_path_dir}/autosender\n"
-            desktop_content += "Version=beta-0.3.0\n"
-            desktop_content += "Type=Application\n"
-            desktop_content += "Categories=Development\n"
-            desktop_content += "Name=HUST AutoLogin\n"
-            desktop_content += "StartupWMClass=HUST AutoLogin\n"
-            desktop_content += "Terminal=false\n"
-            desktop_content += "MimeType=x-scheme-handler/rainyq;\n"
-            desktop_content += "X-GNOME-Autostart-enabled=true\n"
-            desktop_content += "StartupNotify=false\n"
-            desktop_content += "X-GNOME-Autostart-Delay=10\n"
-            desktop_content += "X-MATE-Autostart-Delay=10\n"
-            desktop_content += "X-KDE-autostart-after=panel\n"
-            os.system(f"echo '{desktop_content}' > ~/.config/autostart/{autostart_key_name}.desktop")
-        elif switch == "close":
-            os.system(f"rm -rf ~/.config/autostart/{autostart_key_name}.desktop")
-
-
-def login(username, password):
-    if username is None or username == '' or password is None or password == '':
-        logging.error("[*] Wrong username or passward set.")
-        return Login_State.username_password_NOT_SET, None
-    publicKeyExponent = '10001'
-    publicKeyModules = \
-        "94dd2a8675fb779e6b9f7103698634cd400f27a154afa67af6166a43fc26417222a79506d34cacc7641946abda1785b7acf9910ad6" \
-        "a0978c91ec84d40b71d2891379af19ffb333e7517e390bd26ac312fe940c340466b4a5d4af1d65c3b5944078f96a1a51a5a53e4bc3" \
-        "02818b7c9f63c4a1b07bd7d874cef1c3d4b2f5eb7871"
-
-    redirect_url = "http://123.123.123.123"
-    redirect_head = {
-        'Host': '123.123.123.123',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'DNT': '1',
-        'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 '
-            'Safari/537.36 Edg/96.0.1054.62',
-        'Accept':
-            'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,'
-            'application/signed-exchange;v=b3;q=0.9',
-        'Referer': 'http://192.168.50.3:8080/',
-        'Accept-Encoding': 'gzip, deflate',
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8,en-US;q=0.7,en-GB;q=0.6'
-    }
-
-    try:
-        url = requests.get(redirect_url, headers=redirect_head, timeout=1, proxies=proxies, verify=False)
-    except Exception as e:
-        logging.error(e)
-        return Login_State.queryString_NOT_FOUND, None
-    url = url.text.split("'")[1]
-    queryString = url.split("?")[1]
-    headers = {
-        'Host': '192.168.50.3:8080',
-        'Connection': 'keep-alive',
-        'Content-Length': '895',
-        'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 '
-            'Safari/537.36 Edg/96.0.1054.62',
-        'DNT': '1',
-        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-        'Accept': '*/*',
-        'Origin': 'http://192.168.50.3:8080',
-        'Accept-Encoding': 'gzip, deflate',
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8,en-US;q=0.7,en-GB;q=0.6',
-        'Cookie':
-            'EPORTAL_COOKIE_OPERATORPWD=; '
-            'EPORTAL_COOKIE_SERVER=; '
-            'EPORTAL_COOKIE_DOMAIN=; '
-            'EPORTAL_COOKIE_SAVEPASSWORD=true; '
-            # urlEncode: 请选择服务
-            'EPORTAL_COOKIE_SERVER_NAME=%E8%AF%B7%E9%80%89%E6%8B%A9%E6%9C%8D%E5%8A%A1; '
-            # urlEncode: 华中科技大学
-            'EPORTAL_USER_GROUP=%E5%8D%8E%E4%B8%AD%E7%A7%91%E6%8A%80%E5%A4%A7%E5%AD%A6; '
-            'EPORTAL_COOKIE_USERNAME=' + username + '; ' +
-            'EPORTAL_COOKIE_PASSWORD=' + password + '; ' +
-            'JSESSIONID=C19A16116BF2C50DE7EDA5EFE981AEEE'
-    }
-
-    formdata = {
-        'userId': username,
-        'password': password,
-        'service': '',
-        'queryString': queryString,
-        'operatorPwd': '',
-        'operatorUserId': '',
-        'validcode': '',
-        'passwordEncrypt': 'false'
-    }
-
-    content_list = []
-    for key in formdata:
-        content = ''
-        content += key
-        content += '='
-        content += formdata[key]
-        content_list.append(content)
-
-    content = '&'.join(content_list)
-    try:
-        cookie_response = requests.get(url, headers=headers, proxies=proxies)
-    except Exception as e:
-        logging.error(e)
-        return Login_State.cookie_NOT_GET, None
-    cookie = requests.utils.dict_from_cookiejar(cookie_response.cookies)['JSESSIONID']
-    headers['Cookie'] = headers['Cookie'].replace('C19A16116BF2C50DE7EDA5EFE981AEEE', cookie)
-    headers['Content-Length'] = str(len(content))
-    try:
-        response = requests.post('http://192.168.50.3:8080/eportal/InterFace.do?method=login', data=formdata,
-                                 headers=headers, proxies=proxies, timeout=1)
-    except Exception as e:
-        logging.error(e)
-        return Login_State.post_data_NOT_SEND, None
-    data = response.content.decode('utf-8', 'ignore')
-    data = json.loads(data)
-    if data["result"] == "success":
-        logging.info("[*] Login Successful")
-        return Login_State.login_Successful, data['userIndex']
-    else:
-        return Login_State.login_Wrong_Unknown, None
-
-
-def logout(username, password, user_index):
-    headers = {
-        'Host': '192.168.50.3:8080',
-        'Connection': 'keep-alive',
-        'Content-Length': '128',
-        'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 '
-            'Safari/537.36 Edg/96.0.1054.62',
-        'DNT': '1',
-        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-        'Accept': '*/*',
-        'Origin': 'http://192.168.50.3:8080',
-        'Accept-Encoding': 'gzip, deflate',
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8,en-US;q=0.7,en-GB;q=0.6',
-        'Cookie':
-            'EPORTAL_COOKIE_OPERATORPWD=; '
-            'EPORTAL_COOKIE_SERVER=; '
-            'EPORTAL_COOKIE_DOMAIN=; '
-            'EPORTAL_COOKIE_SAVEPASSWORD=true; '
-            'EPORTAL_COOKIE_USERNAME=; '
-            'EPORTAL_COOKIE_NEWV=true; '
-            'EPORTAL_COOKIE_PASSWORD=' + password + '; ' +
-            'EPORTAL_AUTO_LAND=; '
-            # urlEncode: 请选择服务
-            'EPORTAL_COOKIE_SERVER_NAME=%E8%AF%B7%E9%80%89%E6%8B%A9%E6%9C%8D%E5%8A%A1; '
-            # urlEncode: 华中科技大学
-            'EPORTAL_USER_GROUP=%E5%8D%8E%E4%B8%AD%E7%A7%91%E6%8A%80%E5%A4%A7%E5%AD%A6; '
-            'JSESSIONID=3AC4520F2F846C4C06ABE15B961F620C; '
-            'JSESSIONID=4E728295B7F567ECECB0D586F1F5CBC2'
-    }
-
-    formdata = {
-        'userIndex': user_index
-    }
-
-    content_list = []
-    for key in formdata:
-        content = ''
-        content += key
-        content += '='
-        content += formdata[key]
-        content_list.append(content)
-
-    content = '&'.join(content_list)
-    headers['Content-Length'] = str(len(content))
-
-    try:
-        response = requests.post('http://192.168.50.3:8080/eportal/InterFace.do?method=logout', data=formdata,
-                                 headers=headers, proxies=proxies, timeout=1)
-    except Exception as e:
-        logging.error(e)
-        return Logout_State.userIndex_Wrong
-    data = response.content.decode('utf-8', 'ignore')
-    data = json.loads(data)
-    if data["result"] == "success":
-        logging.info("[*] Logout Successful")
-        return Logout_State.logout_Successful
-    else:
-        return Logout_State.logout_Wrong_Unknown
-
-
-class NetworkTest(QThread):
-    network_flag = pyqtSignal(bool)
-
-    def __init__(self):
-        super(NetworkTest, self).__init__()
-
-    def run(self):
-        not_support_flag = False
-        while True:
-            try:
-                ip = '202.114.0.131'
-                if platform.system() == "Windows":
-                    ret = subprocess.call("ping -n 1 {}".format(ip), stdout=subprocess.DEVNULL, shell=True)
-                elif platform.system() == "Linux":
-                    ret = subprocess.call("ping -c 1 {}".format(ip), stdout=subprocess.DEVNULL, shell=True)
-                else:
-                    if not not_support_flag:
-                        self.tray.showMessage('校园网', '不支持的系统类型，网络连接模块不可用',
-                                              QSystemTrayIcon.MessageIcon.Information)
-                        logging.error("System does not support")
-                    not_support_flag = True
-                    continue
-                if ret == 0:
-                    self.network_flag.emit(True)
-                else:
-                    self.network_flag.emit(False)
-                time.sleep(0.5)
-            except Exception as e:
-                logging.error(e)
-                self.network_flag.emit(False)
-                time.sleep(0.5)
-                continue
 
 
 class MainWindow(QMainWindow):
@@ -499,7 +175,7 @@ class MainWindow(QMainWindow):
         self.remember_layout = QHBoxLayout()
         self.remember_layout.addStretch(1)
         self.remember_checkBox = QCheckBox()
-        self.remember_checkBox.setText("记住密码")
+        self.remember_checkBox.setText("记住账户")
         self.remember_layout.addWidget(self.remember_checkBox)
         self.remember_layout.addStretch(1)
         self.remember_widget.setLayout(self.remember_layout)
@@ -612,7 +288,7 @@ class MainWindow(QMainWindow):
         autostart_temp = self.settings.value("autostart_state/autostart")
         if keeplogin_temp:
             self.keep_login_flag = True
-            self.remember_checkBox.setChecked(True)
+            self.keep_login_checkBox.setChecked(True)
         if remember_temp:
             self.remember = True
             self.remember_checkBox.setChecked(True)
@@ -640,51 +316,7 @@ class MainWindow(QMainWindow):
         password = self.password_text.text()
         state, user_index = login(username, password)
         if state == Login_State.login_Successful:
-            if self.remember_checkBox.isChecked():
-                if username not in self.username:
-                    self.username.insert(0, username)
-                    self.password.insert(0, password)
-                    self.userindex.insert(0, user_index)
-                else:
-                    index = self.username.index(username)
-                    if self.userindex[index] != user_index:
-                        self.tray.showMessage("校园网", "userIndex 已更新", QSystemTrayIcon.MessageIcon.Information)
-                        self.userindex[index] = user_index
-                    if self.password[index] != password:
-                        message = QMessageBox()
-                        message.setText('校园网')
-                        message.setInformativeText(f'输入的密码与存储的账户{username}密码不同，是否需要更新!')
-                        message.setStandardButtons(QMessageBox.StandardButton.Save |
-                                                   QMessageBox.StandardButton.Discard)
-                        message.setDefaultButton(QMessageBox.StandardButton.Save)
-                        if message.exec() == QMessageBox.StandardButton.Save:
-                            self.password[index] = password
-                    password = self.password[index]
-                    del self.username[index]
-                    del self.password[index]
-                    del self.userindex[index]
-                    self.username.insert(0, username)
-                    self.password.insert(0, password)
-                    self.userindex.insert(0, user_index)
-
-                self.settings.beginGroup("account")
-                self.settings.setValue("username", self.username)
-                self.settings.setValue("password", self.password)
-                self.settings.setValue("userIndex", self.userindex)
-                self.settings.endGroup()
-                self.settings.beginGroup("keeplogin_state")
-                self.settings.setValue("keeplogin", self.keep_login_checkBox.isChecked())
-                self.settings.endGroup()
-                self.settings.beginGroup("remember_state")
-                self.settings.setValue("remember", self.remember_checkBox.isChecked())
-                self.settings.endGroup()
-                self.settings.beginGroup("silent_state")
-                self.settings.setValue("silent", self.silent_checkBox.isChecked())
-                self.settings.endGroup()
-                self.settings.beginGroup("autostart_state")
-                self.settings.setValue("autostart", self.autostart_checkBox.isChecked())
-                self.settings.endGroup()
-                self.settings.sync()
+            self.update_config(username, password, user_index)
             if not self.silent_flag:
                 self.tray.showMessage('校园网', '登录成功，Enjoy!', QSystemTrayIcon.MessageIcon.Information)
         else:
@@ -708,17 +340,67 @@ class MainWindow(QMainWindow):
                 else:
                     self.tray.showMessage('校园网', '登录失败，未知错误', QSystemTrayIcon.MessageIcon.Critical)
 
+    def update_config(self, username, password, user_index):
+        if self.remember_checkBox.isChecked():
+            if username not in self.username:
+                self.username.insert(0, username)
+                self.password.insert(0, password)
+                self.userindex.insert(0, user_index)
+            else:
+                index = self.username.index(username)
+                if self.userindex[index] != user_index:
+                    self.tray.showMessage("校园网", "userIndex 已更新", QSystemTrayIcon.MessageIcon.Information)
+                    logging.info(f"Account {username}: userIndex from {self.userindex[index]} to {user_index}.")
+                    self.userindex[index] = user_index
+                if self.password[index] != password:
+                    self.tray.showMessage("校园网", "password 已更新", QSystemTrayIcon.MessageIcon.Information)
+                    logging.info(f"Account {username}: password update.")
+                    self.password[index] = password
+                password = self.password[index]
+                del self.username[index]
+                del self.password[index]
+                del self.userindex[index]
+                self.username.insert(0, username)
+                self.password.insert(0, password)
+                self.userindex.insert(0, user_index)
+
+            self.settings.beginGroup("account")
+            self.settings.setValue("username", self.username)
+            self.settings.setValue("password", self.password)
+            self.settings.setValue("userIndex", self.userindex)
+            self.settings.endGroup()
+            self.settings.beginGroup("keeplogin_state")
+            self.settings.setValue("keeplogin", self.keep_login_checkBox.isChecked())
+            self.settings.endGroup()
+            self.settings.beginGroup("remember_state")
+            self.settings.setValue("remember", self.remember_checkBox.isChecked())
+            self.settings.endGroup()
+            self.settings.beginGroup("silent_state")
+            self.settings.setValue("silent", self.silent_checkBox.isChecked())
+            self.settings.endGroup()
+            self.settings.beginGroup("autostart_state")
+            self.settings.setValue("autostart", self.autostart_checkBox.isChecked())
+            self.settings.endGroup()
+            self.settings.sync()
+
     def logout(self):
         username = self.username_combobox.lineEdit().text()
         password = self.password_text.text()
         try:
-            user_index = self.userindex[self.username.index(username)]
+            user_index = None
+            try:
+                user_index = get_index(username, password)
+            except Exception as e:
+                logging.error(e)
+            if user_index is None:
+                user_index = self.userindex[self.username.index(username)]
         except Exception as e:
-            logging.warning(e)
-            QMessageBox.information(self, "校园网", "没有当前账户的userIndex，请先登录", QMessageBox.StandardButton.Ok)
+            logging.error(e)
+            QMessageBox.information(self, "校园网", "没有当前账户的userIndex，请断网重新登录", QMessageBox.StandardButton.Ok)
             return
         state = logout(username, password, user_index)
         if state == Logout_State.logout_Successful:
+            self.update_config(username, password, user_index)
             self.tray.showMessage('校园网', '下线成功，Enjoy!', QSystemTrayIcon.MessageIcon.Information)
         elif state == Logout_State.userIndex_Wrong:
             self.tray.showMessage('校园网', '下线失败，userIndex 错误', QSystemTrayIcon.MessageIcon.Information)
@@ -735,6 +417,7 @@ class MainWindow(QMainWindow):
         if self.silent_checkBox.checkState() == Qt.CheckState.Checked:
             self.silent_flag = True
             if self.silent_message_information:
+                logging.info("Silent Mode Start.")
                 QMessageBox.warning(self, "校园网",
                                     "启用静默模式后，所有与登录相关的information/warning/error均无弹窗提示，请在日志中查看登录状态",
                                     QMessageBox.StandardButton.Ok)
@@ -755,6 +438,7 @@ class MainWindow(QMainWindow):
             else:
                 autorun_linux(switch='close')
         else:
+            logging.error("[-] Not Supported System type.")
             self.tray.showMessage('校园网', '非 Windows / Linux 系统，开机自启模块无法启动',
                                   QSystemTrayIcon.MessageIcon.Critical)
 
@@ -784,9 +468,7 @@ if __name__ == "__main__":
         elif platform.system() == "Linux":
             if os.path.exists(f"~/.config/autostart/{autostart_key_name}.desktop"):
                 mainwindow.autostart_checkBox.setChecked(True)
-        else:
-            pass
-    except:
-        pass
+    except Exception as e:
+        logging.error(e)
     mainwindow.show()
     sys.exit(app.exec())
