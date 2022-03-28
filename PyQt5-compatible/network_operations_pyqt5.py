@@ -1,11 +1,11 @@
-from headers import *
+from headers_pyqt5 import *
 import requests
 import requests.utils
 import json
 import logging
 import subprocess
 import time
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt5.QtCore import QThread, pyqtSignal
 from enum import Enum, unique
 import platform
 
