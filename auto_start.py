@@ -1,7 +1,6 @@
 import logging
 import os
 import platform
-import sys
 
 try:
     import win32api
@@ -11,8 +10,6 @@ except Exception as e:
     pass
 
 autostart_key_name = 'hust_campus_network_autologin'
-abs_path = os.path.abspath(sys.argv[0])
-abs_path_dir, abs_path_filename = os.path.split(abs_path)
 
 if platform.system() == "Windows":
     def judge_key(key_name=None,
@@ -41,9 +38,9 @@ if platform.system() == "Windows":
         return feedback
 
 
-    def autorun_windows(switch="open",
-                        key_name=None,
-                        abspath=os.path.abspath(sys.argv[0])):
+    def autorun_windows(abspath,
+                        switch="open",
+                        key_name=None):
         key_exit = judge_key(reg_root=win32con.HKEY_CURRENT_USER,
                              reg_path=r"Software\Microsoft\Windows\CurrentVersion\Run",
                              key_name=key_name,
@@ -85,11 +82,11 @@ if platform.system() == "Windows":
                 logging.error(e)
                 logging.error('[-] Unknown Error. Cannot delete Auto Start key.')
 elif platform.system() == "Linux":
-    def autorun_linux(switch="open"):
+    def autorun_linux(abs_path_dir, abspath, switch="open"):
         if switch == "open":
             desktop_content = "[Desktop Entry]\n"
             desktop_content += f"Icon={abs_path_dir}/icons/arjv1-a2cbo-004.ico\n"
-            desktop_content += f"Exec={abs_path_dir}/autosender\n"
+            desktop_content += f"Exec={abspath}\n"
             desktop_content += "Version=beta-0.3.0\n"
             desktop_content += "Type=Application\n"
             desktop_content += "Categories=Development\n"
