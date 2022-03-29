@@ -31,7 +31,7 @@ class MainWindow(QMainWindow):
         info = psutil.net_if_addrs()
         for k, v in info.items():
             # 2 : AddressFamily.AF_INET 仅保留 ipv4
-            if v[1][0] == 2 and not v[1][1] == '127.0.0.1':
+            if len(v) >= 2 and v[1][0] == 2 and not v[1][1] == '127.0.0.1':
                 self.netcard_info[k] = [v[0][1], v[1][1]]
 
         self.network_out_flag = 0
