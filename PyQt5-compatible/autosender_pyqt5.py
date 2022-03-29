@@ -5,8 +5,9 @@ import platform
 from PyQt5.QtSvg import QSvgRenderer
 from PyQt5.QtCore import Qt, QSettings, QCoreApplication, QVariant, QDir
 from PyQt5.QtGui import QPixmap, QColor, QIcon, QPainter
-from PyQt5.QtWidgets import QApplication, QAction, QLabel, QLineEdit, QHBoxLayout, QMainWindow, QWidget, QVBoxLayout, \
+from PyQt5.QtWidgets import QAction, QApplication, QLabel, QLineEdit, QHBoxLayout, QMainWindow, QWidget, QVBoxLayout, \
     QPushButton, QSystemTrayIcon, QMenu, QMessageBox, QCheckBox, QComboBox
+import psutil
 
 os.environ['REQUESTS_CA_BUNDLE'] = os.path.join(os.path.dirname(sys.argv[0]), 'cacert.pem')
 
@@ -21,10 +22,20 @@ QDir.addSearchPath('configs', os.path.join(abs_path_dir, "config"))
 
 
 class MainWindow(QMainWindow):
+    network_card_signal = pyqtSignal(str)
+
     def __init__(self):
         super(MainWindow, self).__init__()
 
+        self.netcard_info = {}
+        info = psutil.net_if_addrs()
+        for k, v in info.items():
+            # 2 : AddressFamily.AF_INET 仅保留 ipv4
+            if v[1][0] == 2 and not v[1][1] == '127.0.0.1':
+                self.netcard_info[k] = [v[0][1], v[1][1]]
+
         self.network_out_flag = 0
+
         self.remember = False
         self.username = []
         self.password = []
@@ -48,7 +59,7 @@ class MainWindow(QMainWindow):
         self.setWindowIcon(self.app_icon)
 
         self.statusBar().setSizeGripEnabled(False)
-        self.setWindowFlags(Qt.WindowCloseButtonHint | Qt.WindowMinimizeButtonHint)
+        self.setWindowFlags(Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint)
 
         self.tray = QSystemTrayIcon()
         self.tray_svg = QSvgRenderer("icons:网络.svg")
@@ -146,6 +157,19 @@ class MainWindow(QMainWindow):
 
         self.vbox.addWidget(self.password_group)
 
+        self.network_card_widget = QWidget()
+        self.network_card_label = QLabel()
+        self.network_card_label.setText("网卡名称：")
+        self.network_card_text = QLineEdit()
+        self.network_card_text.setPlaceholderText("请输入网卡名称")
+        self.network_card_layout = QHBoxLayout()
+        self.network_card_layout.addStretch(1)
+        self.network_card_layout.addWidget(self.network_card_label)
+        self.network_card_layout.addWidget(self.network_card_text)
+        self.network_card_layout.addStretch(1)
+        self.network_card_widget.setLayout(self.network_card_layout)
+        self.vbox.addWidget(self.network_card_widget)
+
         self.login_button_widget = QWidget()
         self.login_layout = QHBoxLayout()
         self.login_layout.addStretch(1)
@@ -225,6 +249,10 @@ class MainWindow(QMainWindow):
         self.settings = QSettings("configs:config.ini", QSettings.Format.IniFormat)
         self.init_config()
         self.username_combobox.currentTextChanged.connect(self.username_combobox_changed)
+        self.network_card_text.returnPressed.connect(self.network_card_name_change)
+
+    def network_card_name_change(self):
+        self.network_card_signal.emit(self.network_card_text.text())
 
     def password_icon_change(self):
         self.password_show_flag = not self.password_show_flag
@@ -282,10 +310,13 @@ class MainWindow(QMainWindow):
         username_temp = self.settings.value("account/username")
         password_temp = self.settings.value("account/password")
         userindex_temp = self.settings.value("account/userIndex")
+        network_card_name_temp = self.settings.value("network_card_name/netcardname")
         keeplogin_temp = self.settings.value("keeplogin_state/keeplogin")
         remember_temp = self.settings.value("remember_state/remember")
         silent_temp = self.settings.value("silent_state/silent")
         autostart_temp = self.settings.value("autostart_state/autostart")
+        if network_card_name_temp:
+            self.network_card_text.setText(network_card_name_temp)
         if keeplogin_temp:
             self.keep_login_flag = True
             self.keep_login_checkBox.setChecked(True)
@@ -314,7 +345,8 @@ class MainWindow(QMainWindow):
     def login(self):
         username = self.username_combobox.lineEdit().text()
         password = self.password_text.text()
-        state, user_index = login(username, password)
+        network_card_name = self.network_card_text.text()
+        state, user_index = login(username, password, self.netcard_info.get(network_card_name))
         if state == Login_State.login_Successful:
             self.update_config(username, password, user_index)
             if not self.silent_flag:
@@ -369,6 +401,9 @@ class MainWindow(QMainWindow):
             self.settings.setValue("password", self.password)
             self.settings.setValue("userIndex", self.userindex)
             self.settings.endGroup()
+            self.settings.beginGroup("network_card_name")
+            self.settings.setValue("netcardname", self.network_card_text.text())
+            self.settings.endGroup()
             self.settings.beginGroup("keeplogin_state")
             self.settings.setValue("keeplogin", self.keep_login_checkBox.isChecked())
             self.settings.endGroup()
@@ -386,10 +421,11 @@ class MainWindow(QMainWindow):
     def logout(self):
         username = self.username_combobox.lineEdit().text()
         password = self.password_text.text()
+        network_card_name = self.network_card_text.text()
         try:
             user_index = None
             try:
-                user_index = get_index(username, password)
+                user_index = get_index(username, password, self.netcard_info.get(network_card_name))
             except Exception as e:
                 logging.error(e)
             if user_index is None:
@@ -398,7 +434,7 @@ class MainWindow(QMainWindow):
             logging.error(e)
             QMessageBox.information(self, "校园网", "没有当前账户的userIndex，请断网重新登录", QMessageBox.StandardButton.Ok)
             return
-        state = logout(username, password, user_index)
+        state = logout(username, password, user_index, self.netcard_info.get(network_card_name))
         if state == Logout_State.logout_Successful:
             self.update_config(username, password, user_index)
             self.tray.showMessage('校园网', '下线成功，Enjoy!', QSystemTrayIcon.MessageIcon.Information)
@@ -449,8 +485,9 @@ if __name__ == "__main__":
     QCoreApplication.setOrganizationDomain("https://github.com/RainYQ/")
     QCoreApplication.setApplicationName("Campus Network Autologin")
     mainwindow = MainWindow()
-    thread = NetworkTest()
+    thread = NetworkTest(mainwindow.netcard_info)
     thread.network_flag.connect(mainwindow.show_message)
+    mainwindow.network_card_signal.connect(thread.setcardname)
     mainwindow.login_button.clicked.connect(mainwindow.login)
     mainwindow.logout_button.clicked.connect(mainwindow.logout)
     mainwindow.keep_login_checkBox.toggled.connect(mainwindow.keep_login)
