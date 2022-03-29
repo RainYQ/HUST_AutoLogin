@@ -8,12 +8,15 @@ from PyQt5.QtGui import QPixmap, QColor, QIcon, QPainter
 from PyQt5.QtWidgets import QAction, QApplication, QLabel, QLineEdit, QHBoxLayout, QMainWindow, QWidget, QVBoxLayout, \
     QPushButton, QSystemTrayIcon, QMenu, QMessageBox, QCheckBox, QComboBox
 import psutil
+import sys
 
 os.environ['REQUESTS_CA_BUNDLE'] = os.path.join(os.path.dirname(sys.argv[0]), 'cacert.pem')
 
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 DATE_FORMAT = "%m/%d/%Y %H:%M:%S %p"
 
+abs_path = os.path.abspath(sys.argv[0])
+abs_path_dir, abs_path_filename = os.path.split(abs_path)
 abs_log_path = os.path.join(abs_path_dir, 'run.log')
 logging.basicConfig(filename=abs_log_path, level=logging.INFO, format=LOG_FORMAT, datefmt=DATE_FORMAT)
 
@@ -246,7 +249,7 @@ class MainWindow(QMainWindow):
         self.network_state = False
         self.status.addPermanentWidget(self.network_status_label)
 
-        self.settings = QSettings("configs:config.ini", QSettings.Format.IniFormat)
+        self.settings = QSettings(os.path.join(abs_path_dir, "config", "config.ini"), QSettings.Format.IniFormat)
         self.init_config()
         self.username_combobox.currentTextChanged.connect(self.username_combobox_changed)
         self.network_card_text.returnPressed.connect(self.network_card_name_change)
@@ -337,6 +340,7 @@ class MainWindow(QMainWindow):
         del username_temp
         del userindex_temp
         del password_temp
+        del network_card_name_temp
         del keeplogin_temp
         del remember_temp
         del silent_temp
@@ -465,14 +469,14 @@ class MainWindow(QMainWindow):
     def autostart(self):
         if platform.system() == "Windows":
             if self.autostart_checkBox.checkState() == Qt.CheckState.Checked:
-                autorun_windows(switch='open', key_name=autostart_key_name)
+                autorun_windows(abspath=os.path.abspath(sys.argv[0]), switch='open', key_name=autostart_key_name)
             else:
-                autorun_windows(switch='close', key_name=autostart_key_name)
+                autorun_windows(abspath=os.path.abspath(sys.argv[0]), switch='close', key_name=autostart_key_name)
         elif platform.system() == "Linux":
             if self.autostart_checkBox.checkState() == Qt.CheckState.Checked:
-                autorun_linux(switch='open')
+                autorun_linux(abs_path_dir=abs_path_dir, abspath=os.path.abspath(sys.argv[0]), switch='open')
             else:
-                autorun_linux(switch='close')
+                autorun_linux(abs_path_dir=abs_path_dir, abspath=os.path.abspath(sys.argv[0]), switch='close')
         else:
             logging.error("[-] Not Supported System type.")
             self.tray.showMessage('校园网', '非 Windows / Linux 系统，开机自启模块无法启动',
