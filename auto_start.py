@@ -83,11 +83,14 @@ if platform.system() == "Windows":
                 logging.error('[-] Unknown Error. Cannot delete Auto Start key.')
 elif platform.system() == "Linux":
     def autorun_linux(abs_path_dir, abspath, switch="open"):
+        logging.error("User Home: " + os.path.join(os.environ['HOME'], ".config/autostart"))
+        if not os.path.exists(os.path.join(os.environ['HOME'], ".config/autostart")):
+            os.makedirs(os.path.join(os.environ['HOME'], ".config/autostart"))
         if switch == "open":
             desktop_content = "[Desktop Entry]\n"
             desktop_content += f"Icon={abs_path_dir}/icons/arjv1-a2cbo-004.ico\n"
             desktop_content += f"Exec={abspath}\n"
-            desktop_content += "Version=beta-0.3.0\n"
+            desktop_content += "Version=beta-0.8.0\n"
             desktop_content += "Type=Application\n"
             desktop_content += "Categories=Development\n"
             desktop_content += "Name=HUST AutoLogin\n"
@@ -99,6 +102,6 @@ elif platform.system() == "Linux":
             desktop_content += "X-GNOME-Autostart-Delay=10\n"
             desktop_content += "X-MATE-Autostart-Delay=10\n"
             desktop_content += "X-KDE-autostart-after=panel\n"
-            os.system(f"echo '{desktop_content}' > ~/.config/autostart/{autostart_key_name}.desktop")
+            os.system(f"echo '{desktop_content}' > {os.environ['HOME']}/.config/autostart/{autostart_key_name}.desktop")
         elif switch == "close":
-            os.system(f"rm -rf ~/.config/autostart/{autostart_key_name}.desktop")
+            os.system(f"rm -rf {os.environ['HOME']}/.config/autostart/{autostart_key_name}.desktop")

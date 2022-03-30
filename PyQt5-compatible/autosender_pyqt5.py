@@ -1,24 +1,24 @@
+import logging
+import sys
+import os
+
+LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
+DATE_FORMAT = "%m/%d/%Y %H:%M:%S %p"
+abs_path = os.path.abspath(sys.argv[0])
+abs_path_dir, abs_path_filename = os.path.split(abs_path)
+abs_log_path = os.path.join(abs_path_dir, 'run.log')
+logging.basicConfig(filename=abs_log_path, level=logging.INFO, format=LOG_FORMAT, datefmt=DATE_FORMAT)
+
 from network_operations_pyqt5 import *
 from auto_start_pyqt5 import *
-import os
-import platform
+
 from PyQt5.QtSvg import QSvgRenderer
 from PyQt5.QtCore import Qt, QSettings, QCoreApplication, QVariant, QDir
 from PyQt5.QtGui import QPixmap, QColor, QIcon, QPainter
 from PyQt5.QtWidgets import QAction, QApplication, QLabel, QLineEdit, QHBoxLayout, QMainWindow, QWidget, QVBoxLayout, \
     QPushButton, QSystemTrayIcon, QMenu, QMessageBox, QCheckBox, QComboBox
-import psutil
-import sys
 
 os.environ['REQUESTS_CA_BUNDLE'] = os.path.join(os.path.dirname(sys.argv[0]), 'cacert.pem')
-
-LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
-DATE_FORMAT = "%m/%d/%Y %H:%M:%S %p"
-
-abs_path = os.path.abspath(sys.argv[0])
-abs_path_dir, abs_path_filename = os.path.split(abs_path)
-abs_log_path = os.path.join(abs_path_dir, 'run.log')
-logging.basicConfig(filename=abs_log_path, level=logging.INFO, format=LOG_FORMAT, datefmt=DATE_FORMAT)
 
 QDir.addSearchPath('icons', os.path.join(abs_path_dir, "icons"))
 QDir.addSearchPath('configs', os.path.join(abs_path_dir, "config"))
@@ -31,14 +31,8 @@ class MainWindow(QMainWindow):
         super(MainWindow, self).__init__()
 
         self.netcard_info = {}
-        info = psutil.net_if_addrs()
-        for k, v in info.items():
-            # 2 : AddressFamily.AF_INET 仅保留 ipv4
-            if len(v) >= 2 and v[1][0] == 2 and not v[1][1] == '127.0.0.1':
-                self.netcard_info[k] = [v[0][1], v[1][1]]
-
+        self.update_network()
         self.network_out_flag = 0
-
         self.remember = False
         self.username = []
         self.password = []
@@ -254,6 +248,19 @@ class MainWindow(QMainWindow):
         self.username_combobox.currentTextChanged.connect(self.username_combobox_changed)
         self.network_card_text.returnPressed.connect(self.network_card_name_change)
 
+    def update_network(self):
+        info = psutil.net_if_addrs()
+        for k, v in info.items():
+            mac_addr = None
+            ip_addr = None
+            for item in v:
+                if item.family == psutil.AF_LINK:
+                    mac_addr = item.address
+                if item.family == socket.AddressFamily.AF_INET and not item.address == '127.0.0.1':
+                    ip_addr = item.address
+            if mac_addr is not None and ip_addr is not None:
+                self.netcard_info[k] = [mac_addr, ip_addr]
+
     def network_card_name_change(self):
         self.network_card_signal.emit(self.network_card_text.text())
 
@@ -350,6 +357,9 @@ class MainWindow(QMainWindow):
         username = self.username_combobox.lineEdit().text()
         password = self.password_text.text()
         network_card_name = self.network_card_text.text()
+        self.update_network()
+        if network_card_name == '':
+            logging.warning("[-] Not set network card name. Use default network card.")
         state, user_index = login(username, password, self.netcard_info.get(network_card_name))
         if state == Login_State.login_Successful:
             self.update_config(username, password, user_index)
@@ -429,6 +439,9 @@ class MainWindow(QMainWindow):
         try:
             user_index = None
             try:
+                self.update_network()
+                if network_card_name == '':
+                    logging.warning("[-] Not set network card name. Use default network card.")
                 user_index = get_index(username, password, self.netcard_info.get(network_card_name))
             except Exception as e:
                 logging.error(e)
@@ -438,6 +451,9 @@ class MainWindow(QMainWindow):
             logging.error(e)
             QMessageBox.information(self, "校园网", "没有当前账户的userIndex，请断网重新登录", QMessageBox.StandardButton.Ok)
             return
+        self.update_network()
+        if network_card_name == '':
+            logging.warning("[-] Not set network card name. Use default network card.")
         state = logout(username, password, user_index, self.netcard_info.get(network_card_name))
         if state == Logout_State.logout_Successful:
             self.update_config(username, password, user_index)
@@ -507,7 +523,7 @@ if __name__ == "__main__":
             if key_exit == 0 or key_exit == 1:
                 mainwindow.autostart_checkBox.setChecked(True)
         elif platform.system() == "Linux":
-            if os.path.exists(f"~/.config/autostart/{autostart_key_name}.desktop"):
+            if os.path.exists(f"{os.environ['HOME']}/.config/autostart/{autostart_key_name}.desktop"):
                 mainwindow.autostart_checkBox.setChecked(True)
     except Exception as e:
         logging.error(e)

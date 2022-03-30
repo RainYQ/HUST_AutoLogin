@@ -6,8 +6,10 @@
 /run.log
 __pycache__
 .idea
+/package/
 /PyQt5-compatible/build_ubuntu_18.04/
 /PyQt5-compatible/build_ubuntu_20.04/
 /PyQt5-compatible/build_windows/
 /PyQt5-compatible/config/config.ini
 /PyQt5-compatible/run.log
+*.zip
