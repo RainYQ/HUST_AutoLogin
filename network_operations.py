@@ -9,6 +9,8 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from enum import Enum, unique
 import platform
 from requests_toolbelt.adapters.source import SourceAddressAdapter
+import psutil
+import socket
 
 proxies = {'http': None, 'https': None}
 
@@ -35,7 +37,7 @@ def login(username, password, netcard_info):
         logging.error("[-] Wrong username or passward set.")
         return Login_State.username_password_NOT_SET, None
     if netcard_info is None:
-        logging.warning("[-] No network card name set. Use default network card.")
+        logging.warning("[-] Wrong network card name set. Use default network card.")
         netcard_mac = None
         netcard_ip = None
     else:
@@ -132,7 +134,7 @@ def login(username, password, netcard_info):
 
 def get_index(username, password, netcard_info):
     if netcard_info is None:
-        logging.warning("[-] No network card name set. Use default network card.")
+        logging.warning("[-] Wrong network card name set. Use default network card.")
         netcard_mac = None
         netcard_ip = None
     else:
@@ -159,7 +161,7 @@ def get_index(username, password, netcard_info):
 
 def logout(username, password, user_index, netcard_info):
     if netcard_info is None:
-        logging.warning("[-] No network card name set. Use default network card.")
+        logging.warning("[-] Wrong network card name set. Use default network card.")
         netcard_mac = None
         netcard_ip = None
     else:
@@ -224,6 +226,7 @@ class NetworkTest(QThread):
         while True:
             try:
                 ip = '202.114.0.131'
+                self.update_network()
                 if platform.system() == "Windows":
                     if self.netcard_ip is not None:
                         ret = subprocess.call(f"ping -S {self.netcard_ip} -n 1 {ip}", stdout=subprocess.DEVNULL, shell=True)
@@ -231,7 +234,7 @@ class NetworkTest(QThread):
                         ret = subprocess.call(f"ping -n 1 {ip}", stdout=subprocess.DEVNULL, shell=True)
                 elif platform.system() == "Linux":
                     if self.netcard_ip is not None:
-                        ret = subprocess.call(f"ping -S {self.netcard_ip} -c 1 {ip}", stdout=subprocess.DEVNULL, shell=True)
+                        ret = subprocess.call(f"ping -I {self.netcard_ip} -c 1 {ip}", stdout=subprocess.DEVNULL, shell=True)
                     else:
                         ret = subprocess.call(f"ping -c 1 {ip}", stdout=subprocess.DEVNULL, shell=True)
                 else:
@@ -258,4 +261,17 @@ class NetworkTest(QThread):
         else:
             self.netcard_mac = self.netcard_info.get(name)[0]
             self.netcard_ip = self.netcard_info.get(name)[1]
+
+    def update_network(self):
+        info = psutil.net_if_addrs()
+        for k, v in info.items():
+            mac_addr = None
+            ip_addr = None
+            for item in v:
+                if item.family == psutil.AF_LINK:
+                    mac_addr = item.address
+                if item.family == socket.AddressFamily.AF_INET and not item.address == '127.0.0.1':
+                    ip_addr = item.address
+            if mac_addr is not None and ip_addr is not None:
+                self.netcard_info[k] = [mac_addr, ip_addr]
 
