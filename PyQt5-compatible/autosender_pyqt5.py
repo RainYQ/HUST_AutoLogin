@@ -15,7 +15,7 @@ from auto_start_pyqt5 import *
 from PyQt5.QtSvg import QSvgRenderer
 from PyQt5.QtCore import Qt, QSettings, QCoreApplication, QVariant, QDir
 from PyQt5.QtGui import QPixmap, QColor, QIcon, QPainter
-from PyQt5.QtWidgets import QAction, QApplication, QLabel, QLineEdit, QHBoxLayout, QMainWindow, QWidget, QVBoxLayout, \
+from PyQt5.QtWidgets import QApplication, QAction, QLabel, QLineEdit, QHBoxLayout, QMainWindow, QWidget, QVBoxLayout, \
     QPushButton, QSystemTrayIcon, QMenu, QMessageBox, QCheckBox, QComboBox
 
 os.environ['REQUESTS_CA_BUNDLE'] = os.path.join(os.path.dirname(sys.argv[0]), 'cacert.pem')
@@ -43,9 +43,10 @@ class MainWindow(QMainWindow):
         self.silent_flag = False
         self.password_show_flag = False
         self.silent_message_information = True
+        self.office_flag = False
 
         self.setWindowTitle("AutoLogin")
-        self.setFixedSize(300, 400)
+        self.setFixedSize(300, 500)
 
         self.app_svg = QSvgRenderer("icons:app.svg")
         self.app_pixmap = QPixmap(128, 128)
@@ -221,6 +222,16 @@ class MainWindow(QMainWindow):
         self.autostart_layout.addStretch(1)
         self.autostart_widget.setLayout(self.autostart_layout)
         self.vbox.addWidget(self.autostart_widget)
+
+        self.office_widget = QWidget()
+        self.office_layout = QHBoxLayout()
+        self.office_layout.addStretch(1)
+        self.office_checkBox = QCheckBox()
+        self.office_checkBox.setText("办公组")
+        self.office_layout.addWidget(self.office_checkBox)
+        self.office_layout.addStretch(1)
+        self.office_widget.setLayout(self.office_layout)
+        self.vbox.addWidget(self.office_widget)
         self.vbox.addStretch(1)
 
         self.login_widget = QWidget()
@@ -325,6 +336,7 @@ class MainWindow(QMainWindow):
         remember_temp = self.settings.value("remember_state/remember")
         silent_temp = self.settings.value("silent_state/silent")
         autostart_temp = self.settings.value("autostart_state/autostart")
+        office_temp = self.settings.value("office_state/office")
         if network_card_name_temp:
             self.network_card_text.setText(network_card_name_temp)
         if keeplogin_temp:
@@ -344,6 +356,8 @@ class MainWindow(QMainWindow):
             self.userindex = userindex_temp
             self.username_combobox.addItems(self.username)
             self.password_text.setText(self.password[0])
+        if office_temp:
+            self.office_checkBox.setChecked(True)
         del username_temp
         del userindex_temp
         del password_temp
@@ -352,6 +366,7 @@ class MainWindow(QMainWindow):
         del remember_temp
         del silent_temp
         del autostart_temp
+        del office_temp
 
     def login(self):
         username = self.username_combobox.lineEdit().text()
@@ -360,7 +375,7 @@ class MainWindow(QMainWindow):
         self.update_network()
         if network_card_name == '':
             logging.warning("[-] Not set network card name. Use default network card.")
-        state, user_index = login(username, password, self.netcard_info.get(network_card_name))
+        state, user_index = login(username, password, self.netcard_info.get(network_card_name), self.office_flag)
         if state == Login_State.login_Successful:
             self.update_config(username, password, user_index)
             if not self.silent_flag:
@@ -430,6 +445,9 @@ class MainWindow(QMainWindow):
             self.settings.beginGroup("autostart_state")
             self.settings.setValue("autostart", self.autostart_checkBox.isChecked())
             self.settings.endGroup()
+            self.settings.beginGroup("office_state")
+            self.settings.setValue("office", self.autostart_checkBox.isChecked())
+            self.settings.endGroup()
             self.settings.sync()
 
     def logout(self):
@@ -442,7 +460,7 @@ class MainWindow(QMainWindow):
                 self.update_network()
                 if network_card_name == '':
                     logging.warning("[-] Not set network card name. Use default network card.")
-                user_index = get_index(username, password, self.netcard_info.get(network_card_name))
+                user_index = get_index(username, password, self.netcard_info.get(network_card_name), self.office_flag)
             except Exception as e:
                 logging.error(e)
             if user_index is None:
@@ -454,7 +472,7 @@ class MainWindow(QMainWindow):
         self.update_network()
         if network_card_name == '':
             logging.warning("[-] Not set network card name. Use default network card.")
-        state = logout(username, password, user_index, self.netcard_info.get(network_card_name))
+        state = logout(username, password, user_index, self.netcard_info.get(network_card_name), self.office_flag)
         if state == Logout_State.logout_Successful:
             self.update_config(username, password, user_index)
             self.tray.showMessage('校园网', '下线成功，Enjoy!', QSystemTrayIcon.MessageIcon.Information)
@@ -468,6 +486,12 @@ class MainWindow(QMainWindow):
             self.keep_login_flag = True
         else:
             self.keep_login_flag = False
+
+    def office_check(self):
+        if self.office_checkBox.checkState() == Qt.CheckState.Checked:
+            self.office_flag = True
+        else:
+            self.office_flag = False
 
     def silent(self):
         if self.silent_checkBox.checkState() == Qt.CheckState.Checked:

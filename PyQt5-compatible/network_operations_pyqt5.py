@@ -32,7 +32,7 @@ class Logout_State(Enum):
     logout_Wrong_Unknown = 6
 
 
-def login(username, password, netcard_info):
+def login(username, password, netcard_info, office_flag):
     if username is None or username == '' or password is None or password == '':
         logging.error("[-] Wrong username or passward set.")
         return Login_State.username_password_NOT_SET, None
@@ -66,7 +66,7 @@ def login(username, password, netcard_info):
         return Login_State.queryString_NOT_FOUND, None
     url = url.text.split("'")[1]
     queryString = url.split("?")[1]
-    headers = get_login_headers(username, password)
+    headers = get_login_headers(username, password, office_flag)
     formdata = {
         'userId': username,
         'password': password,
@@ -132,7 +132,7 @@ def login(username, password, netcard_info):
         return Login_State.login_Wrong_Unknown, None
 
 
-def get_index(username, password, netcard_info):
+def get_index(username, password, netcard_info, office_flag):
     if netcard_info is None:
         logging.warning("[-] Wrong network card name set. Use default network card.")
         netcard_mac = None
@@ -140,7 +140,7 @@ def get_index(username, password, netcard_info):
     else:
         netcard_mac = netcard_info[0]
         netcard_ip = netcard_info[1]
-    headers = get_login_headers(username, password)
+    headers = get_login_headers(username, password, office_flag)
     try:
         if netcard_ip is not None:
             s = requests.Session()
@@ -159,7 +159,7 @@ def get_index(username, password, netcard_info):
         return None
 
 
-def logout(username, password, user_index, netcard_info):
+def logout(username, password, user_index, netcard_info, office_flag):
     if netcard_info is None:
         logging.warning("[-] Wrong network card name set. Use default network card.")
         netcard_mac = None
@@ -167,7 +167,7 @@ def logout(username, password, user_index, netcard_info):
     else:
         netcard_mac = netcard_info[0]
         netcard_ip = netcard_info[1]
-    headers = get_logout_headers(password)
+    headers = get_logout_headers(password, office_flag)
     formdata = {
         'userIndex': user_index
     }

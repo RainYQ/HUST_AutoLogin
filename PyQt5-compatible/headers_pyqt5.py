@@ -1,4 +1,6 @@
-def get_login_headers(username, password):
+def get_login_headers(username, password, office_flag):
+    group = '%E5%8A%9E%E5%85%AC%E5%8C%BA%E7%94%A8%E6%88%B7%E7%BB%84' if office_flag else \
+        "%E5%8D%8E%E4%B8%AD%E7%A7%91%E6%8A%80%E5%A4%A7%E5%AD%A6"
     headers = {
         'Host': '192.168.50.3:8080',
         'Connection': 'keep-alive',
@@ -20,7 +22,7 @@ def get_login_headers(username, password):
             # urlEncode: 请选择服务
             'EPORTAL_COOKIE_SERVER_NAME=%E8%AF%B7%E9%80%89%E6%8B%A9%E6%9C%8D%E5%8A%A1; '
             # urlEncode: 华中科技大学
-            'EPORTAL_USER_GROUP=%E5%8D%8E%E4%B8%AD%E7%A7%91%E6%8A%80%E5%A4%A7%E5%AD%A6; '
+            f'EPORTAL_USER_GROUP={group}; '
             'EPORTAL_COOKIE_USERNAME=' + username + '; ' +
             'EPORTAL_COOKIE_PASSWORD=' + password + '; ' +
             'JSESSIONID=C19A16116BF2C50DE7EDA5EFE981AEEE'
@@ -47,7 +49,9 @@ def get_redirect_headers():
     return headers
 
 
-def get_logout_headers(password):
+def get_logout_headers(password, office_flag):
+    group = '%E5%8A%9E%E5%85%AC%E5%8C%BA%E7%94%A8%E6%88%B7%E7%BB%84' if office_flag else \
+        "%E5%8D%8E%E4%B8%AD%E7%A7%91%E6%8A%80%E5%A4%A7%E5%AD%A6"
     headers = {
         'Host': '192.168.50.3:8080',
         'Connection': 'keep-alive',
@@ -71,9 +75,9 @@ def get_logout_headers(password):
             'EPORTAL_COOKIE_PASSWORD=' + password + '; ' +
             'EPORTAL_AUTO_LAND=; '
             # urlEncode: 请选择服务
-            'EPORTAL_COOKIE_SERVER_NAME=%E8%AF%B7%E9%80%89%E6%8B%A9%E6%9C%8D%E5%8A%A1; '
+            'EPORTAL_COOKIE_SERVER_NAME=; '
             # urlEncode: 华中科技大学
-            'EPORTAL_USER_GROUP=%E5%8D%8E%E4%B8%AD%E7%A7%91%E6%8A%80%E5%A4%A7%E5%AD%A6; '
+            f'EPORTAL_USER_GROUP={group}; '
             'JSESSIONID=3AC4520F2F846C4C06ABE15B961F620C; '
             'JSESSIONID=4E728295B7F567ECECB0D586F1F5CBC2'
     }
