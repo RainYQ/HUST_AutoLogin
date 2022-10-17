@@ -339,16 +339,16 @@ class MainWindow(QMainWindow):
         office_temp = self.settings.value("office_state/office")
         if network_card_name_temp:
             self.network_card_text.setText(network_card_name_temp)
-        if keeplogin_temp:
+        if keeplogin_temp == 'true':
             self.keep_login_flag = True
             self.keep_login_checkBox.setChecked(True)
-        if remember_temp:
+        if remember_temp == 'true':
             self.remember = True
             self.remember_checkBox.setChecked(True)
-        if silent_temp:
+        if silent_temp == 'true':
             self.silent_flag = True
             self.silent_checkBox.setChecked(True)
-        if autostart_temp:
+        if autostart_temp == 'true':
             self.autostart_checkBox.setChecked(True)
         if username_temp is not None and password_temp is not None and userindex_temp is not None:
             self.username = username_temp
@@ -356,7 +356,7 @@ class MainWindow(QMainWindow):
             self.userindex = userindex_temp
             self.username_combobox.addItems(self.username)
             self.password_text.setText(self.password[0])
-        if office_temp:
+        if office_temp == 'true':
             self.office_checkBox.setChecked(True)
         del username_temp
         del userindex_temp
@@ -446,7 +446,7 @@ class MainWindow(QMainWindow):
             self.settings.setValue("autostart", self.autostart_checkBox.isChecked())
             self.settings.endGroup()
             self.settings.beginGroup("office_state")
-            self.settings.setValue("office", self.autostart_checkBox.isChecked())
+            self.settings.setValue("office", self.office_checkBox.isChecked())
             self.settings.endGroup()
             self.settings.sync()
 
